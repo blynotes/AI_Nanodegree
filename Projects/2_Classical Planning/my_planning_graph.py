@@ -7,9 +7,11 @@ from layers import BaseActionLayer, BaseLiteralLayer, makeNoOp, make_node
 
 DEBUGMODE = True
 
+
 def printDebugMsg(msg):
     if DEBUGMODE:
         print(msg)
+
 
 class ActionLayer(BaseActionLayer):
 
@@ -34,7 +36,6 @@ class ActionLayer(BaseActionLayer):
         #             printDebugMsg("***effectA == ~effectB")
         return any([effectA == ~effectB for effectA in self.children[actionA] for effectB in self.children[actionB]])
         # raise NotImplementedError
-
 
     def _interference(self, actionA, actionB):
         """ Return True if the effects of either action negate the preconditions of the other
@@ -62,8 +63,10 @@ class ActionLayer(BaseActionLayer):
         #         if effectB == ~precondA:
         #             printDebugMsg("***effectB == ~precondA")
 
-        effectA_precondB = [effectA == ~precondB for precondB in self.parents[actionB] for effectA in self.children[actionA]]
-        effectB_precondA = [effectB == ~precondA for precondA in self.parents[actionA] for effectB in self.children[actionB]]
+        effectA_precondB = [effectA == ~precondB for precondB in self.parents[actionB]
+                            for effectA in self.children[actionA]]
+        effectB_precondA = [effectB == ~precondA for precondA in self.parents[actionA]
+                            for effectB in self.children[actionB]]
         return any(effectA_precondB + effectB_precondA)
         # raise NotImplementedError
 
@@ -80,23 +83,15 @@ class ActionLayer(BaseActionLayer):
         layers.BaseLayer.parent_layer
         """
         # TODO: implement this function
-        # printDebugMsg("\n\n_competing_needs")
-        #
-        # printDebugMsg(f"actionA = {actionA}")
-        # printDebugMsg(f"actionB = {actionB}")
-        # printDebugMsg(f"self.parents = {self.parents}")
-        # printDebugMsg(f"self.parents[actionA] = {self.parents[actionA]}")
-        # printDebugMsg(f"self.parents[actionB] = {self.parents[actionB]}")
-        # printDebugMsg(f"dir(self.parent_layer) = {dir(self.parent_layer)}")
-        # printDebugMsg(f"self.parent_layer.parents = {self.parent_layer.parents}")
-        for precondA in self.parents[actionA]:
-            for precondB in self.parents[actionB]:
-                if self.parent_layer.is_mutex(precondA, precondB):
-                    printDebugMsg(f"precondA is {precondA}")
-                    printDebugMsg(f"precondB is {precondB}")
-                    printDebugMsg("precondA is pairwise mutex with precondB")
-                    printDebugMsg(f"self.parent_layer._mutexes = {self.parent_layer._mutexes}")
-                    if DEBUGMODE: input("_competing_needs")
+        # for precondA in self.parents[actionA]:
+        #     for precondB in self.parents[actionB]:
+        #         if self.parent_layer.is_mutex(precondA, precondB):
+        #             printDebugMsg(f"precondA is {precondA}")
+        #             printDebugMsg(f"precondB is {precondB}")
+        #             printDebugMsg("precondA is pairwise mutex with precondB")
+        #             printDebugMsg(f"self.parent_layer._mutexes = {self.parent_layer._mutexes}")
+        #             if DEBUGMODE:
+        #                 input("_competing_needs")
         return any([self.parent_layer.is_mutex(precondA, precondB) for precondA in self.parents[actionA] for precondB in self.parents[actionB]])
         # raise NotImplementedError
 
@@ -115,33 +110,22 @@ class LiteralLayer(BaseLiteralLayer):
         layers.BaseLayer.parent_layer
         """
         # TODO: implement this function
-        print("***WARNING: I don't think _inconsistent_support is correct yet...")
-        printDebugMsg("\n\n_inconsistent_support")
-        printDebugMsg(f"literalA = {literalA}")
-        printDebugMsg(f"literalB = {literalB}")
-        printDebugMsg(f"self.parents = {self.parents}")
-        printDebugMsg(f"self.parents[literalA] = {self.parents[literalA]}")
-        printDebugMsg(f"self.parents[literalB] = {self.parents[literalB]}")
-        printDebugMsg(f"self.parent_layer = {self.parent_layer}")
-        for precondA in self.parents[literalA]:
-            for precondB in self.parents[literalB]:
-                if self.parent_layer.is_mutex(precondA, precondB):
-                    printDebugMsg(f"precondA is {precondA}")
-                    printDebugMsg(f"precondB is {precondB}")
-                    printDebugMsg("precondA is pairwise mutex with precondB")
-                    printDebugMsg(f"self.parent_layer._mutexes = {self.parent_layer._mutexes}")
-                    if DEBUGMODE: input("_inconsistent_support")
-        return any([self.parent_layer.is_mutex(precondA, precondB) for precondA in self.parents[literalA] for precondB in self.parents[literalB]])
-        raise NotImplementedError
+        # Per the textbook a mutex relation holds between two literals at
+        # the same level if each possible pair of actions that could
+        # achieve the two literals is mutually exclusive.
+        for parentActionA in self.parents[literalA]:
+            for parentActionB in self.parents[literalB]:
+                if not self.parent_layer.is_mutex(parentActionA, parentActionB):
+                    # There is a valid way to achieve both literals.
+                    return False
+        # Every possible pair of actions that could achieve the two literals is
+        # mutually exclusive. Return True.
+        return True
+        # raise NotImplementedError
 
     def _negation(self, literalA, literalB):
         """ Return True if two literals are negations of each other """
         # TODO: implement this function
-        if literalA == ~literalB:
-            printDebugMsg("\n\n_negation")
-            printDebugMsg(f"literalA = {literalA}")
-            printDebugMsg(f"literalB = {literalB}")
-            printDebugMsg("literalA == ~literalB")
         return literalA == ~literalB
         # raise NotImplementedError
 
@@ -170,7 +154,8 @@ class PlanningGraph:
         self.goal = set(problem.goal)
 
         # make no-op actions that persist every literal to the next layer
-        no_ops = [make_node(n, no_op=True) for n in chain(*(makeNoOp(s) for s in problem.state_map))]
+        no_ops = [make_node(n, no_op=True)
+                  for n in chain(*(makeNoOp(s) for s in problem.state_map))]
         self._actionNodes = no_ops + [make_node(a) for a in problem.actions_list]
 
         # initialize the planning graph by finding the literals that are in the
@@ -180,6 +165,15 @@ class PlanningGraph:
         layer.update_mutexes()
         self.literal_layers = [layer]
         self.action_layers = []
+
+    def levelCost(self, goal):
+        """Helper function used by h_maxlevel and h_levelsum.
+        The level cost of a goal is equal to the level number of
+        the first literal layer in the plannin graph where the goal
+        literal appears."""
+        for i, layer in enumerate(self.literal_layers):
+            if goal in layer:
+                return i
 
     def h_levelsum(self):
         """ Calculate the level sum heuristic for the planning graph
@@ -207,8 +201,13 @@ class PlanningGraph:
         Russell-Norvig 10.3.1 (3rd Edition)
         """
         # TODO: implement this function
-        printDebugMsg("\n\nh_levelsum")
-        raise NotImplementedError
+        # printDebugMsg("\n\nh_levelsum")
+        costs = []
+        self.fill()
+        for goal in self.goal:
+            costs.append(self.levelCost(goal))
+        return sum(costs)
+        # raise NotImplementedError
 
     def h_maxlevel(self):
         """ Calculate the max level heuristic for the planning graph
@@ -238,8 +237,14 @@ class PlanningGraph:
         WARNING: you should expect long runtimes using this heuristic with A*
         """
         # TODO: implement maxlevel heuristic
-        printDebugMsg("\n\nh_maxlevel")
-        raise NotImplementedError
+        # printDebugMsg("\n\nh_maxlevel")
+        # Based on pseudocode.
+        costs = []
+        self.fill()
+        for goal in self.goal:
+            costs.append(self.levelCost(goal))
+        return max(costs)
+        # raise NotImplementedError
 
     def h_setlevel(self):
         """ Calculate the set level heuristic for the planning graph
@@ -264,8 +269,24 @@ class PlanningGraph:
         WARNING: you should expect long runtimes using this heuristic on complex problems
         """
         # TODO: implement setlevel heuristic
-        printDebugMsg("\n\nh_setlevel")
-        raise NotImplementedError
+        # printDebugMsg("\n\nh_setlevel")
+        self.fill()
+        for i, layer in enumerate(self.literal_layers):
+            allGoalsMet = True
+            for goal in self.goal:
+                if goal not in layer:
+                    allGoalsMet = False
+            if not allGoalsMet:
+                continue
+
+            goalsAreMutex = False
+            for goalA in self.goal:
+                for goalB in self.goal:
+                    if layer.is_mutex(goalA, goalB):
+                        goalsAreMutex = True
+            if not goalsAreMutex:
+                return i
+        # raise NotImplementedError
 
     ##############################################################################
     #                     DO NOT MODIFY CODE BELOW THIS LINE                     #
@@ -286,7 +307,8 @@ class PlanningGraph:
         YOU SHOULD NOT THIS FUNCTION TO COMPLETE THE PROJECT, BUT IT MAY BE USEFUL FOR TESTING
         """
         while not self._is_leveled:
-            if maxlevels == 0: break
+            if maxlevels == 0:
+                break
             self._extend()
             maxlevels -= 1
         return self
@@ -300,11 +322,13 @@ class PlanningGraph:
         The new literal layer contains all literals that could result from taking each possible
         action in the NEW action layer.
         """
-        if self._is_leveled: return
+        if self._is_leveled:
+            return
 
         parent_literals = self.literal_layers[-1]
         parent_actions = parent_literals.parent_layer
-        action_layer = ActionLayer(parent_actions, parent_literals, self._serialize, self._ignore_mutexes)
+        action_layer = ActionLayer(parent_actions, parent_literals,
+                                   self._serialize, self._ignore_mutexes)
         literal_layer = LiteralLayer(parent_literals, action_layer, self._ignore_mutexes)
 
         for action in self._actionNodes:
