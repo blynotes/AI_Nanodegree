@@ -5,11 +5,12 @@ from isolation import DebugState
 import copy
 import math
 import random
+import time
 
-DEBUGMODE = True
+DEBUGMODE = False
 DEBUG_PRI = 7
 
-NodeCount = 0
+AB_Baseline_NodeCount = 0
 
 def printDebugMsg(msg, priority=1):
     if DEBUGMODE and priority >= DEBUG_PRI:
@@ -60,14 +61,15 @@ class CustomPlayer(DataPlayer):
 
         printDebugMsg(DebugState(state.board))
 
-        import random
         ply_count_threshold = 2
         # If fewer than ply_count_threshold applied on board, then choose random move.
         if state.ply_count < ply_count_threshold:
-            self.queue.put(random.choice(state.actions()))
+            if state.actions():
+                self.queue.put(random.choice(state.actions()))
+            else:
+                self.queue.put(None)
         else:
             if method == "RANDOM":
-                import random
                 self.queue.put(random.choice(state.actions()))
             elif method == "MINIMAX":
                 # Code from sample_players.py file.
@@ -75,22 +77,25 @@ class CustomPlayer(DataPlayer):
                 self.queue.put(self.minimax(state, depth=3))
             elif method == "ALPHABETA_Iterative":  # Win ~= 62.5%
                 # Alpha-Beta with iterative deepening
-                depth_limit = 5
+                depth_limit = 3
                 best_move = None
                 for depth in range(1, depth_limit + 1):
                     best_move = self.alpha_beta_search(state, depth)
                 printDebugMsg("final best_move = {}".format(best_move))
-                print("Alpha Beta Node Count = {}".format(NodeCount))
+                # print("Alpha Beta Node Count = {}".format(AB_Baseline_NodeCount))
                 self.queue.put(best_move)
             elif method == "MCTS":  # Win ~=
                 # Use Monte Carlo Tree Search
                 mcts = MCTS_Search(computational_budget=100)
-                self.queue.put(mcts.uctSearch(state))
-                print("MCTS self.nodeSelectedCtr = {}".format(mcts.nodeSelectedCtr))
-                print("MCTS self.nodeExpandedCtr = {}".format(mcts.nodeExpandedCtr))
-                print("MCTS self.nodeSimulatedCtr = {}".format(mcts.nodeSimulatedCtr))
-                print("MCTS self.nodeBackpropCtr = {}".format(mcts.nodeBackpropCtr))
-                print()
+                # mcts = MCTS_Search()
+                action = mcts.uctSearch(state)
+                # Handle case where no action was returned.
+                if action:
+                    self.queue.put(action)
+                elif state.actions():
+                    self.queue.put(random.choice(state.actions()))
+                else:
+                    self.queue.put(None)
             elif method == "NEGASCOUT":  # Win ~= 18%
                 # Use NegaScout
                 self.queue.put(self.negaScout(state, depth=5))
@@ -110,8 +115,8 @@ class CustomPlayer(DataPlayer):
             else:
                 import sys
                 sys.exit("Unknown method")
-
         printDebugMsg("self.queue = {}".format(self.queue))
+
 
 
     def negaScout(self, state, depth):
@@ -378,8 +383,8 @@ class CustomPlayer(DataPlayer):
             otherwise return the minimum value over all legal child
             nodes.
             """
-            global NodeCount
-            NodeCount += 1
+            global AB_Baseline_NodeCount
+            AB_Baseline_NodeCount += 1
             printDebugMsg("ab_min_value with depth = {}".format(depth))
 
             if state.terminal_test():
@@ -400,8 +405,8 @@ class CustomPlayer(DataPlayer):
             otherwise return the maximum value over all legal child
             nodes.
             """
-            global NodeCount
-            NodeCount += 1
+            global AB_Baseline_NodeCount
+            AB_Baseline_NodeCount += 1
             printDebugMsg("ab_max_value with depth = {}".format(depth))
             if state.terminal_test():
                 return state.utility(self.player_id)
@@ -456,8 +461,9 @@ class CustomPlayer(DataPlayer):
 
         return max(state.actions(), key=lambda x: min_value(state.result(x), depth - 1))
 
+
 class MCTS_Node:
-    """Monte Carlo Tree Search Node"""
+    """Inner Class Monte Carlo Tree Search Node"""
     def __init__(self, state, parent=None):
         """Initialize node.
 
@@ -520,19 +526,16 @@ class MCTS_Node:
         self.child_actions.append(action)
         return newChild
 
-
-
 class MCTS_Search:
     """Monte Carlo Tree Search Algorithm"""
-    def __init__(self, computational_budget):
-        """Initialize the search.
-
-        INPUTS:
-            "computational_budget": number of iterations through the tree search.
-        OUTPUT:
-            action returned from uctSearch.
-        """
+    def __init__(self, computational_budget=None):
+        """If initialized, then we can use the number of iterations specified
+        by computational_budget."""
+        # from run_match.py, TIME_LIMIT = 150ms
+        # Need a buffer, so only take 75% of the allowed time.
+        self.time_limit = 150 * .75  # ms
         self.computational_budget = computational_budget
+
         self.nodeSelectedCtr = 0
         self.nodeExpandedCtr = 0
         self.nodeSimulatedCtr = 0
@@ -551,16 +554,29 @@ class MCTS_Search:
         """
         # Create root node with state.
         rootNode = MCTS_Node(state)
-        # Continue to iterate until we are out of "budget" (i.e. number of times
-        # we want to iterate through the tree search).
-        for _ in range(self.computational_budget):
-            childNode = self.treePolicy(rootNode)
-            delta = self.defaultPolicy(childNode.state)
-            self.backupNegamax(childNode, delta)
+        if self.computational_budget:
+            # Use number iterations specified by computational_budget.
+            for _ in range(self.computational_budget):
+                    childNode = self.treePolicy(rootNode)
+                    delta = self.defaultPolicy(childNode.state)
+                    self.backupNegamax(childNode, delta)
+        else:
+            # Base it on time elapsed.
+            start_time = time.clock()
+            # Continue to iterate until we are out of "budget" (i.e. amount of time).
+            while( (time.clock() - start_time)*1000 <= self.time_limit):
+                childNode = self.treePolicy(rootNode)
+                delta = self.defaultPolicy(childNode.state)
+                self.backupNegamax(childNode, delta)
         # Need to get the index of one of the best children and return the action
         # taken to reach it.
-        childIndex = rootNode.child_list.index(self.bestChild(rootNode))
-        return rootNode.child_actions[childIndex]
+        best = self.bestChild(rootNode)
+        if best is None:
+            # No best child, just choose randomly.
+            return random.choice(state.actions())
+        else:
+            childIndex = rootNode.child_list.index(best)
+            return rootNode.child_actions[childIndex]
 
     def treePolicy(self, v):
         """Based on Pseudo-code from Lesson 5 additional adversarial search topics.
@@ -604,7 +620,6 @@ class MCTS_Search:
 
         # Select random action from list of untried actions.
         action = random.choice(list(untried_actions))
-        # action = untried_actions[0]  # Select first untried action.
         childState = v.state.result(action)
         newChild = v.addChild(childState, action)
         return newChild
@@ -647,7 +662,12 @@ class MCTS_Search:
                 bestScore = score
 
         # We have gone through all the children here. Now select one of the best children to return.
-        return random.choice(bestChildren)
+        if bestChildren:
+            best = random.choice(bestChildren)
+        else:
+            # No best children found.
+            best = None
+        return best
 
     def defaultPolicy(self, state):
         """Based on Pseudo-code from Lesson 5 additional adversarial search topics.
