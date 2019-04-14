@@ -1,0 +1,18 @@
+[
+    {
+        "advice": "",
+        "result": ".",
+        "description": "1. Test planning graph mutexes",
+        "traceback": "",
+        "rubric_item_id": "10732",
+        "message": ""
+    },
+    {
+        "advice": "",
+        "result": ".",
+        "description": "2. Test planning graph heuristic implementations",
+        "traceback": "",
+        "rubric_item_id": "10733",
+        "message": ""
+    }
+]
